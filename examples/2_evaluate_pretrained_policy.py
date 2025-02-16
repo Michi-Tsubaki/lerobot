@@ -1,11 +1,18 @@
 """
-This scripts demonstrates how to evaluate a pretrained policy from the HuggingFace Hub or from your local
-training outputs directory. In the latter case, you might want to run examples/3_train_policy.py first.
+このスクリプトは,
+1. Hugging Face Hub から事前学習済みポリシーを評価する方法
+2. ローカルのトレーニング出力ディレクトリから評価する方法
+を示している.
 
-It requires the installation of the 'gym_pusht' simulation environment. Install it by running:
-```bash
-pip install -e ".[pusht]"`
+後者の場合,
+まず examples/3_train_policy.py を実行する.
+
+このスクリプトには、'gym_pusht' シミュレーション環境のインストールが必要である.
+次のコマンドでインストールできる
 ```
+pip install -e ".[pusht]"
+```
+
 """
 
 from pathlib import Path
@@ -18,17 +25,18 @@ import torch
 
 from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
 
-# Create a directory to store the video of the evaluation
-output_directory = Path("outputs/eval/example_pusht_diffusion")
+# evaluationの結果を保存するディレクトリを作成
+#output_directory = Path("outputs/eval/example_pusht_diffusion")
+output_directory = Path("outputs/eval/my_example_pusht_diffusion")
 output_directory.mkdir(parents=True, exist_ok=True)
 
 # Select your device
 device = "cuda"
 
 # Provide the [hugging face repo id](https://huggingface.co/lerobot/diffusion_pusht):
-pretrained_policy_path = "lerobot/diffusion_pusht"
+#  pretrained_policy_path = "lerobot/diffusion_pusht"
 # OR a path to a local outputs/train folder.
-# pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
+pretrained_policy_path = Path("outputs/train/my_example_pusht_diffusion")
 
 policy = DiffusionPolicy.from_pretrained(pretrained_policy_path, map_location=device)
 
