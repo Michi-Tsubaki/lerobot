@@ -1,3 +1,163 @@
+# トレーニングスクリプトのチュートリアル
+
+このチュートリアルでは、トレーニングスクリプトの説明、その使用方法、特にトレーニング実行に必要なすべての設定方法について説明します。
+
+> **注意:** 以下の説明は、CUDA GPUを搭載したマシンでコマンドを実行することを前提としています。GPUがない場合（またはMacを使用している場合）、`--device=cpu`（またはそれぞれ`--device=mps`）を追加できます。ただし、CPUでは実行速度が大幅に遅くなることに注意してください。
+
+## トレーニングスクリプト
+
+LeRobotは[`lerobot/scripts/train.py`](../../lerobot/scripts/train.py)にトレーニングスクリプトを提供しています。概要として、以下のことを行います：
+
+- 以下のステップのための設定を初期化/ロードします。
+- データセットをインスタンス化します。
+- （オプション）そのデータセットに対応するシミュレーション環境をインスタンス化します。
+- ポリシーをインスタンス化します。
+- 順伝播、逆伝播、最適化ステップ、および定期的なログ記録、評価（環境上でのポリシーの評価）、チェックポイントを含む標準的なトレーニングループを実行します。
+
+## 設定システムの概要
+
+トレーニングスクリプトでは、メイン関数`train`は`TrainPipelineConfig`オブジェクトを期待します：
+```python
+# train.py
+@parser.wrap()
+def train(cfg: TrainPipelineConfig):
+```
+
+[`lerobot/configs/train.py`](../../lerobot/configs/train.py)で定義されている`TrainPipelineConfig`を確認できます（これは詳細にコメントが付けられており、すべてのオプションを理解するためのリファレンスとなることを意図しています）
+
+スクリプトを実行する際、コマンドラインからの入力は`@parser.wrap()`デコレータによって解析され、このクラスのインスタンスが自動的に生成されます。内部的には、これは[Draccus](https://github.com/dlwh/draccus)というこの目的のために作られたツールによって行われます。Hydraに慣れている方なら、Draccusも同様に設定ファイル（.json、.yaml）から設定をロードし、さらにコマンドライン入力を通じてそれらの値を上書きできます。Hydraとは異なり、これらの設定は設定ファイルで完全に定義されるのではなく、dataclassを通じてコードで事前定義されています。これにより、より厳密なシリアライズ/デシリアライズ、型付け、およびコード内で設定を直接オブジェクトとして操作することが可能になります（これにより、IDEでのオートコンプリート、定義へのジャンプなどの便利な機能が利用できます）。
+
+簡略化した例を見てみましょう。トレーニング設定には、他の属性の中でも以下のような属性があります：
+```python
+@dataclass
+class TrainPipelineConfig:
+    dataset: DatasetConfig
+    env: envs.EnvConfig | None = None
+    policy: PreTrainedConfig | None = None
+```
+ここで、例えば`DatasetConfig`は以下のように定義されています：
+```python
+@dataclass
+class DatasetConfig:
+    repo_id: str
+    episodes: list[int] | None = None
+    video_backend: str = "pyav"
+```
+
+これにより、例えば`TrainPipelineConfig`のインスタンス`cfg`がある場合、`cfg.dataset.repo_id`で`repo_id`の値にアクセスできるという階層関係が作成されます。
+コマンドラインから、非常に似た構文`--dataset.repo_id=repo/id`を使用してこの値を指定できます。
+
+デフォルトでは、すべてのフィールドはdataclassで指定されたデフォルト値を取ります。フィールドにデフォルト値がない場合、コマンドラインまたは設定ファイルから指定する必要があります（設定ファイルのパスもコマンドラインで指定します - 詳細は後述）。上記の例では、`dataset`フィールドにデフォルト値がないため、指定する必要があります。
+
+## CLIから値を指定する
+
+[Diffusion Policy](../../lerobot/common/policies/diffusion)を[pusht](https://huggingface.co/datasets/lerobot/pusht)データセットで訓練し、評価のために[gym_pusht](https://github.com/huggingface/gym-pusht)環境を使用したいとしましょう。そのためのコマンドは以下のようになります：
+```bash
+python lerobot/scripts/train.py \
+    --dataset.repo_id=lerobot/pusht \
+    --policy.type=diffusion \
+    --env.type=pusht
+```
+
+これを分解して説明しましょう：
+- データセットを指定するには、`DatasetConfig`で唯一必須の引数であるハブ上の`repo_id`を指定するだけで良いです。残りのフィールドにはデフォルト値があり、この場合はそれらで問題ないため、単に`--dataset.repo_id=lerobot/pusht`オプションを追加するだけです。
+- ポリシーを指定するには、`--policy`に`.type`を付けてdiffusionポリシーを選択するだけです。ここで、`.type`は`draccus.ChoiceRegistry`を継承し、`register_subclass()`メソッドでデコレートされた設定クラスを選択できる特別な引数です。この機能の詳細な説明については、この[Draccusデモ](https://github.com/dlwh/draccus?tab=readme-ov-file#more-flexible-configuration-with-choice-types)をご覧ください。私たちのコードでは、この仕組みを主にポリシー、環境、ロボット、およびオプティマイザなどの他のコンポーネントの選択に使用しています。選択可能なポリシーは[lerobot/common/policies](../../lerobot/common/policies)にあります。
+- 同様に、`--env.type=pusht`で環境を選択します。利用可能な環境設定は[`lerobot/common/envs/configs.py`](../../lerobot/common/envs/configs.py)にあります。
+
+別の例を見てみましょう。[ACT](../../lerobot/common/policies/act)を[lerobot/aloha_sim_insertion_human](https://huggingface.co/datasets/lerobot/aloha_sim_insertion_human)で訓練し、評価のために[gym-aloha](https://github.com/huggingface/gym-aloha)環境を使用していたとします：
+```bash
+python lerobot/scripts/train.py \
+    --policy.type=act \
+    --dataset.repo_id=lerobot/aloha_sim_insertion_human \
+    --env.type=aloha \
+    --output_dir=outputs/train/act_aloha_insertion
+```
+> `--output_dir`を追加して、この実行からの出力（チェックポイント、トレーニング状態、設定など）を書き込む場所を明示的に指定したことに注意してください。これは必須ではなく、指定しない場合は、現在の日付と時刻、env.type、policy.typeから生成されたデフォルトのディレクトリが作成されます。これは通常`outputs/train/2025-01-24/16-10-05_aloha_act`のようになります。
+
+今度は別のタスクでalohaの別のポリシーを訓練したいとします。データセットを変更して、代わりに[lerobot/aloha_sim_transfer_cube_human](https://huggingface.co/datasets/lerobot/aloha_sim_transfer_cube_human)を使用します。もちろん、このタスクに合わせて環境のタスクも変更する必要があります。
+[`AlohaEnv`](../../lerobot/common/envs/configs.py)設定を見ると、タスクはデフォルトで`"AlohaInsertion-v0"`で、これは上記のコマンドで訓練したタスクに対応します。[gym-aloha](https://github.com/huggingface/gym-aloha?tab=readme-ov-file#description)環境には、訓練したい別のタスクに対応する`AlohaTransferCube-v0`タスクもあります。これらをまとめると、以下のコマンドで新しいポリシーをこの異なるタスクで訓練できます：
+```bash
+python lerobot/scripts/train.py \
+    --policy.type=act \
+    --dataset.repo_id=lerobot/aloha_sim_transfer_cube_human \
+    --env.type=aloha \
+    --env.task=AlohaTransferCube-v0 \
+    --output_dir=outputs/train/act_aloha_transfer
+```
+
+## 設定ファイルからのロード
+
+さて、上記の実行を再現したいとします。その実行では、使用した`TrainPipelineConfig`インスタンスをシリアライズした`train_config.json`ファイルがチェックポイントに生成されています：
+```json
+{
+    "dataset": {
+        "repo_id": "lerobot/aloha_sim_transfer_cube_human",
+        "episodes": null,
+        ...
+    },
+    "env": {
+        "type": "aloha",
+        "task": "AlohaTransferCube-v0",
+        "fps": 50,
+        ...
+    },
+    "policy": {
+        "type": "act",
+        "n_obs_steps": 1,
+        ...
+    },
+    ...
+}
+```
+
+以下のように、このファイルから設定値を簡単にロードできます：
+```bash
+python lerobot/scripts/train.py \
+    --config_path=outputs/train/act_aloha_transfer/checkpoints/last/pretrained_model/ \
+    --output_dir=outputs/train/act_aloha_transfer_2
+```
+`--config_path`は、ローカルの設定ファイルから設定を初期化できる特別な引数です。`train_config.json`を含むディレクトリを指定するか、設定ファイル自体を直接指定できます。
+
+Hydraと同様に、必要に応じてCLIでパラメータを上書きすることもできます：
+```bash
+python lerobot/scripts/train.py \
+    --config_path=outputs/train/act_aloha_transfer/checkpoints/last/pretrained_model/ \
+    --output_dir=outputs/train/act_aloha_transfer_2
+    --policy.n_action_steps=80
+```
+> 注意：一般的に`--output_dir`は必須ではありませんが、この場合は`train_config.json`から値を取得するため（値は`outputs/train/act_aloha_transfer`）、指定する必要があります。以前の実行のチェックポイントを誤って削除することを防ぐため、既存のディレクトリに書き込もうとするとエラーが発生します。これは実行を再開する場合には当てはまりません（次に学びます）。
+
+`--config_path`は、`train_config.json`ファイルを含むハブ上のリポジトリのrepo_idも受け入れることができます。例えば：
+```bash
+python lerobot/scripts/train.py --config_path=lerobot/diffusion_pusht
+```
+を実行すると、[lerobot/diffusion_pusht](https://huggingface.co/lerobot/diffusion_pusht)の訓練に使用されたのと同じ設定で訓練実行が開始されます。
+
+## トレーニングの再開
+
+クラッシュや中断などの理由で訓練実行を再開できることは重要です。ここでその方法を説明します。
+
+前回の実行のコマンドを再利用し、いくつかのオプションを追加してみましょう：
+```bash
+python lerobot/scripts/train.py \
+    --policy.type=act \
+    --dataset.repo_id=lerobot/aloha_sim_transfer_cube_human \
+    --env.type=aloha \
+    --env.task=AlohaTransferCube-v0 \
+    --log_freq=25 \
+    --save_freq=100 \
+    --output_dir=outputs/train/run_resumption
+```
+
+ここでは、再開のデモンストレーションができるように、ログ頻度とチェックポイント頻度を低い数値に設定しました。（ハードウェアによりますが）1分以内にログが表示され、最初のチェックポイントが作成されるはずです。最初のチェックポイントが作成されるのを待ちます。ターミナルに以下のような行が表示されるはずです：
+```
+INFO 2025-01-24 16:10:56 ts/train.py:263 Checkpoint policy after step 100
+```
+ここで、プロセスを強制終了して（`ctrl`+`c`を押して）クラッシュをシミュレートしましょう。その後、以下のコマンドで利用可能な最後のチェックポイントから実行
+
+＝＝＝＝＝＝
+
+
 This tutorial will explain the training script, how to use it, and particularly how to configure everything needed for the training run.
 > **Note:** The following assume you're running these commands on a machine equipped with a cuda GPU. If you don't have one (or if you're using a Mac), you can add `--device=cpu` (`--device=mps` respectively). However, be advised that the code executes much slower on cpu.
 

@@ -27,16 +27,16 @@ from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
 
 # evaluationの結果を保存するディレクトリを作成
 #output_directory = Path("outputs/eval/example_pusht_diffusion")
-output_directory = Path("outputs/eval/my_example_pusht_diffusion")
+output_directory = Path("outputs/eval/my_example_pusht_diffusion_common")
 output_directory.mkdir(parents=True, exist_ok=True)
 
 # Select your device
-device = "cuda"
+device = "cpu"
 
 # Provide the [hugging face repo id](https://huggingface.co/lerobot/diffusion_pusht):
 #  pretrained_policy_path = "lerobot/diffusion_pusht"
 # OR a path to a local outputs/train folder.
-pretrained_policy_path = Path("outputs/train/my_example_pusht_diffusion")
+pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
 
 policy = DiffusionPolicy.from_pretrained(pretrained_policy_path, map_location=device)
 
