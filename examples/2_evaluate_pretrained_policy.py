@@ -1,17 +1,25 @@
+# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
-このスクリプトは,
-1. Hugging Face Hub から事前学習済みポリシーを評価する方法
-2. ローカルのトレーニング出力ディレクトリから評価する方法
-を示している.
+=======
+This script demonstrates how to evaluate a pretrained policy from the HuggingFace Hub or from your local
+training outputs directory. In the latter case, you might want to run examples/3_train_policy.py first.
 
-後者の場合,
-まず examples/3_train_policy.py を実行する.
-
-このスクリプトには、'gym_pusht' シミュレーション環境のインストールが必要である.
-次のコマンドでインストールできる
-```
+It requires the installation of the 'gym_pusht' simulation environment. Install it by running:
+```bash
 pip install -e ".[pusht]"
-```
 
 """
 
@@ -23,7 +31,7 @@ import imageio
 import numpy
 import torch
 
-from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
+from lerobot.policies.diffusion.modeling_diffusion import DiffusionPolicy
 
 # evaluationの結果を保存するディレクトリを作成
 #output_directory = Path("outputs/eval/example_pusht_diffusion")
@@ -38,7 +46,7 @@ device = "cpu"
 # OR a path to a local outputs/train folder.
 pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
 
-policy = DiffusionPolicy.from_pretrained(pretrained_policy_path, map_location=device)
+policy = DiffusionPolicy.from_pretrained(pretrained_policy_path)
 
 # Initialize evaluation environment to render two observation types:
 # an image of the scene and state/position of the agent. The environment
@@ -113,7 +121,7 @@ while not done:
     rewards.append(reward)
     frames.append(env.render())
 
-    # The rollout is considered done when the success state is reach (i.e. terminated is True),
+    # The rollout is considered done when the success state is reached (i.e. terminated is True),
     # or the maximum number of iterations is reached (i.e. truncated is True)
     done = terminated | truncated | done
     step += 1
